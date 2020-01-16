@@ -1,20 +1,35 @@
 package org.sagebionetworks.research.mpower;
 
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
+import android.content.Intent;
 import android.content.res.Configuration;
 import androidx.annotation.VisibleForTesting;
 import androidx.fragment.app.Fragment;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.WindowManager;
 
+import com.google.android.gms.location.ActivityRecognition;
+import com.google.android.gms.location.ActivityTransition;
+import com.google.android.gms.location.ActivityTransitionRequest;
+import com.google.android.gms.location.DetectedActivity;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
+
+import org.sagebionetworks.research.mpower.background.ActivityTransitionReceiver;
 import org.sagebionetworks.researchstack.backbone.ResearchStack;
 import org.sagebionetworks.bridge.android.di.BridgeStudyComponent;
 import org.sagebionetworks.research.mpower.inject.DaggerMPowerApplicationComponent;
 import org.sagebionetworks.research.mpower.inject.DaggerMPowerUserScopeComponent;
 import org.sagebionetworks.research.mpower.inject.MPowerUserScopeComponent;
 import org.sagebionetworks.research.sageresearch.BridgeSageResearchApp;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.inject.Inject;
 
@@ -57,6 +72,66 @@ public class MPowerApplication extends BridgeSageResearchApp implements HasSuppo
                 .bridgeStudyComponent(bridgeStudyComponent)
                 .build();
         return bridgeManagerProvider;
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+
+        addActivityTransitionReceiver(this);
+
+    }
+
+    public static void addActivityTransitionReceiver(Context context) {
+        //TODO: nbrown 1/16/2020 - check that user has agreed to passive data collection before adding ActivityTransitionReceiver
+
+        //TODO: nbrown 1/16/2020 - add or remove receiver when user updates their passive data collection setting
+        // -See iOS for where this setting is stored as well as UI for updating
+        // -iOS prompts the user after the walk and balance task if it has never been set
+        // -In bridge study manager will need to update Configuration Elements -> SettingsDataSource -> passiveDataAllowed to no longer be hidden on Android
+
+        Context applicationContext = context.getApplicationContext();
+        List<ActivityTransition> transitions = new ArrayList<>();
+
+        transitions.add(
+                new ActivityTransition.Builder()
+                        .setActivityType(DetectedActivity.WALKING)
+                        .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
+                        .build());
+
+        transitions.add(
+                new ActivityTransition.Builder()
+                        .setActivityType(DetectedActivity.WALKING)
+                        .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_EXIT)
+                        .build());
+
+        ActivityTransitionRequest request = new ActivityTransitionRequest(transitions);
+
+        Intent intent = new Intent(applicationContext, ActivityTransitionReceiver.class);
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(applicationContext, 1, intent, 0);
+
+        Task<Void> task = ActivityRecognition.getClient(applicationContext)
+                .requestActivityTransitionUpdates(request, pendingIntent);
+
+        task.addOnSuccessListener(
+                new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void result) {
+                        // Handle success
+                        Log.d("MPower", "Activity Transition Registration Success");
+                    }
+                }
+        );
+
+        task.addOnFailureListener(
+                new OnFailureListener() {
+                    @Override
+                    public void onFailure(Exception e) {
+                        // Handle error
+                        Log.d("MPower", "Activity Transition Registration Failure");
+                    }
+                }
+        );
     }
 
 
